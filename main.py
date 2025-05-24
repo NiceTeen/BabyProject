@@ -12,6 +12,10 @@ import queue
 import threading
 import xlrd
 import xlwt
+import pandas as pd
+
+from DrissionPage import ChromiumPage, ChromiumOptions
+ChromiumOptions().set_browser_path("C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe").save()
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
@@ -204,6 +208,7 @@ class MainFrame(QTabWidget):
         super(MainFrame, self).__init__()
         self.file_handle = FileHandle(self)
         self.config_save = ConfigSave(self)
+        self.website_entry_info = {}
         self.init_ui()
         self.log("日志系统")
         self.init_save()
@@ -305,6 +310,47 @@ class MainFrame(QTabWidget):
 
         self.addTab(self.widget2, "提取货号")
 
+        # 网站录入
+        self.widget3 = QWidget(self)
+        vbox2 = QVBoxLayout(self.widget3)
+        self.widget1.setLayout(vbox2)
+
+        hbox_start = QHBoxLayout(self.widget3)
+
+        self.open_website_button = QPushButton("打开网站", self.widget3)
+        self.open_website_button.clicked.connect(self.open_website)
+        hbox_start.addWidget(self.open_website_button)
+
+        self.current_row_ctrl = QLineEdit(self.widget3)
+        self.current_row_ctrl.setText("3")
+        self.current_row_ctrl.setFixedWidth(50)
+        self.current_row_ctrl.setStyleSheet("color: #3CB371;")
+        hbox_start.addWidget(self.current_row_ctrl)
+
+        self.entry_button = QPushButton("录入", self.widget3)
+        self.entry_button.clicked.connect(self.website_entry)
+        hbox_start.addWidget(self.entry_button)
+        vbox2.addLayout(hbox_start)
+
+        hbox_path = QHBoxLayout(self.widget3)
+        self.file_path_ctrl3 = QLineEdit(self.widget3)
+        self.file_path_ctrl3.setEnabled(False)
+        self.file_path_ctrl3.setStyleSheet("color: #3CB371;")
+        self.file_path_ctrl3.setPlaceholderText("选择要录入的文件")
+        self.file_path_choice_button3 = QPushButton("选择文件", self.widget3)
+        self.file_path_choice_button3.clicked.connect(self.choice_file_path3)
+        hbox_path.addWidget(self.file_path_ctrl3)
+        hbox_path.addWidget(self.file_path_choice_button3)
+        vbox2.addLayout(hbox_path)
+
+        hbox_log = QHBoxLayout(self.widget3)
+        self.log_ctrl3 = QTextEdit(self.widget3)
+        self.log_ctrl3.setReadOnly(True)
+        self.log_ctrl3.setStyleSheet("color: #3CB371;")
+        hbox_log.addWidget(self.log_ctrl3)
+        vbox2.addLayout(hbox_log)
+        self.addTab(self.widget3, "CMS网站录入")
+
 
     def init_save(self):
         self.name_list = ["file_path_ctrl", "save_path_ctrl"]
@@ -380,6 +426,86 @@ class MainFrame(QTabWidget):
         folder = QFileDialog.getExistingDirectory(self, '选择保存路径')
         if folder:
             self.save_path_ctrl2.setText(folder)
+
+    def choice_file_path3(self):
+        """加载录入文件"""
+        options = QFileDialog.Options()
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择XLSX文件",
+            "",
+            "Excel文件 (*.xlsx);;所有文件 (*)",
+            options=options
+        )
+
+        if file_name:
+            self.file_path_ctrl3.setText(file_name)
+            # 解析excel
+            self.extract_excel(file_name)
+
+    def extract_excel(self, file_path):
+        self.task_list = []
+        try:
+            df = pd.read_excel(file_path)
+            name_list = list(df.iloc[:, 1])[1:]
+            model_list = list(df.iloc[:, 2])[1:]
+            color_list = list(df.iloc[:, 3])[1:]
+            size_list = list(df.iloc[:, 4])[1:]
+            material_list = list(df.iloc[:, 5])[1:]
+            self.website_entry_info["Name"] = name_list
+            self.website_entry_info["Model"] = model_list
+            self.website_entry_info["Color"] = color_list
+            self.website_entry_info["Size"] = size_list
+            self.website_entry_info["Material"] = material_list
+            self.log_ctrl3.append(f"解析表格成功，一共{len(name_list)}个！")
+            return True
+        except Exception as e:
+            self.log_ctrl3.append(f"解析表格失败！原因：{e}")
+            return False
+
+    def open_website(self):
+        """打开网站"""
+        self.page = ChromiumPage()
+        self.page.get("http://www.cnacczj.com/zy-manage/admin_login.php")
+        self.log_ctrl3.append("网站打开了，需要自己登录一下哦")
+
+    def website_entry(self):
+        """网站录入"""
+        try:
+            body_node = self.page.ele("@id=frame_right").ele("tag=body")
+        except Exception as e:
+            self.log_ctrl3.append("页面不对哦，打开添加产品的页面再点录入")
+            return
+        if not self.is_not_none_node(body_node):
+            self.log_ctrl3.append("页面不对哦，打开添加产品的页面再点录入")
+            return
+        try:
+            current_num = int(self.current_row_ctrl.text())
+            current_num = current_num - 3
+            if current_num < 0:
+                self.log_ctrl3.append("输入的行数要大于3哦")
+                return
+        except Exception as e:
+            self.log_ctrl3.append("输入的行数不对哦")
+            return
+        name = self.website_entry_info["Name"][current_num]
+        body_node.ele("@id=product_name").input(name)
+        model = self.website_entry_info["Model"][current_num]
+        body_node.ele("@id=product_model").input(model)
+        color = self.website_entry_info["Color"][current_num]
+        body_node.ele("@id=product_color").input(color)
+        size = self.website_entry_info["Size"][current_num]
+        body_node.ele("@id=product_size").input(size)
+        material = self.website_entry_info["Material"][current_num]
+        body_node.ele("@id=product_dis").input(material)
+        self.log_ctrl3.append(f"把{self.current_row_ctrl.text()}填写进去了！^^")
+        self.current_row_ctrl.setText(str(current_num + 4))
+
+    def is_not_none_node(self, node):
+        if node.__class__.__name__ != "NoneElement":
+            return True
+        else:
+            return False
 
     def hint_error(self, message):
         """弹窗提示错误"""
