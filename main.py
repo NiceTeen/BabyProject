@@ -452,11 +452,15 @@ class MainFrame(QTabWidget):
             color_list = list(df.iloc[:, 3])[1:]
             size_list = list(df.iloc[:, 4])[1:]
             material_list = list(df.iloc[:, 5])[1:]
+            subclass_list = list(df.iloc[:, 7])[1:]
+            series_list = list(df.iloc[:, 8])[1:]
             self.website_entry_info["Name"] = name_list
             self.website_entry_info["Model"] = model_list
             self.website_entry_info["Color"] = color_list
             self.website_entry_info["Size"] = size_list
             self.website_entry_info["Material"] = material_list
+            self.website_entry_info["SubClass"] = subclass_list
+            self.website_entry_info["Series"] = series_list
             self.log_ctrl3.append(f"解析表格成功，一共{len(name_list)}个！")
             return True
         except Exception as e:
@@ -498,6 +502,18 @@ class MainFrame(QTabWidget):
         body_node.ele("@id=product_size").input(size)
         material = self.website_entry_info["Material"][current_num]
         body_node.ele("@id=product_dis").input(material)
+        subclass = self.website_entry_info["SubClass"][current_num]
+        subclass_select_node = body_node.ele("@id=subclass_id")
+        for option_node in subclass_select_node.eles("tag=option"):
+            if subclass.upper() == option_node.text.replace("|- ", "").upper():
+                subclass_select_node.select.by_value(option_node.value)
+                break
+        series = self.website_entry_info["Series"][current_num]
+        series_select_node = body_node.ele("@id=collclass_id")
+        for option_node in series_select_node.eles("tag=option"):
+            if series.upper() == option_node.text.replace("|- ", "").upper():
+                series_select_node.select.by_value(option_node.value)
+                break
         self.log_ctrl3.append(f"把{self.current_row_ctrl.text()}填写进去了！^^")
         self.current_row_ctrl.setText(str(current_num + 4))
 
