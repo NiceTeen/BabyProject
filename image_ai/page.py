@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QTimer, QUrl
-from PyQt5.QtGui import QDesktopServices, QPixmap
+from PyQt5.QtGui import QColor, QDesktopServices, QPixmap
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -101,6 +101,7 @@ class ImagePreviewDialog(QDialog):
         open_folder_button = QPushButton("打开目录")
         save_as_button = QPushButton("另存为图片")
         close_button = QPushButton("关闭")
+        save_as_button.setProperty("buttonRole", "primary")
         open_folder_button.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(image_path.parent)))
         )
@@ -153,6 +154,14 @@ class ImageAiPage(QWidget):
         "cancelled": "已取消",
         "interrupted": "已中断",
     }
+    STATUS_COLORS = {
+        "queued": "#81745D",
+        "running": "#5F7682",
+        "completed": "#587562",
+        "failed": "#9A6262",
+        "cancelled": "#7F8787",
+        "interrupted": "#746E7D",
+    }
 
     def __init__(
         self,
@@ -180,15 +189,17 @@ class ImageAiPage(QWidget):
         self.refresh_tasks()
 
     def _build_ui(self) -> None:
+        self.setObjectName("AppPage")
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(24, 18, 24, 24)
+        root.setSpacing(14)
 
-        settings_group = QGroupBox("配置")
+        settings_group = QFrame(self)
+        settings_group.setObjectName("Card")
         settings_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         settings_layout = QHBoxLayout(settings_group)
-        settings_layout.setContentsMargins(10, 7, 10, 7)
-        settings_layout.setSpacing(8)
+        settings_layout.setContentsMargins(18, 13, 18, 15)
+        settings_layout.setSpacing(10)
 
         settings_layout.addWidget(QLabel("API Key"))
         self.api_key_edit = QLineEdit()
@@ -196,6 +207,7 @@ class ImageAiPage(QWidget):
         self.api_key_edit.setPlaceholderText("请输入 API Key")
         self.show_api_key_check = QCheckBox("显示")
         self.save_api_key_button = QPushButton("保存")
+        self.save_api_key_button.setProperty("buttonRole", "success")
         self.show_api_key_check.toggled.connect(self._toggle_api_key_visibility)
         self.save_api_key_button.clicked.connect(self.save_api_key)
         settings_layout.addWidget(self.api_key_edit, 3)
@@ -212,36 +224,43 @@ class ImageAiPage(QWidget):
         settings_layout.addWidget(output_dir_button)
         root.addWidget(settings_group)
 
-        create_group = QGroupBox("新建任务")
+        create_group = QGroupBox("新建图片任务")
         create_layout = QHBoxLayout(create_group)
+        create_layout.setContentsMargins(18, 15, 18, 17)
+        create_layout.setSpacing(16)
         self.source_preview = QLabel("未选择图片\n文生图")
+        self.source_preview.setObjectName("ImagePreview")
         self.source_preview.setAlignment(Qt.AlignCenter)
         self.source_preview.setFrameShape(QFrame.StyledPanel)
         self.source_preview.setFixedSize(150, 150)
-        create_layout.addWidget(self.source_preview)
 
-        input_layout = QVBoxLayout()
-        source_layout = QHBoxLayout()
-        self.source_path_edit = QLineEdit()
-        self.source_path_edit.setReadOnly(True)
-        self.source_path_edit.setPlaceholderText("不选图片时执行文生图")
+        preview_layout = QVBoxLayout()
+        preview_layout.setSpacing(8)
+        preview_layout.addWidget(self.source_preview, 0, Qt.AlignHCenter)
+        preview_actions = QHBoxLayout()
+        preview_actions.setSpacing(8)
         choose_image_button = QPushButton("选择图片")
         clear_image_button = QPushButton("清除")
         choose_image_button.clicked.connect(self.choose_source_image)
         clear_image_button.clicked.connect(self.clear_source_image)
-        source_layout.addWidget(self.source_path_edit, 1)
-        source_layout.addWidget(choose_image_button)
-        source_layout.addWidget(clear_image_button)
-        input_layout.addLayout(source_layout)
+        preview_actions.addWidget(choose_image_button)
+        preview_actions.addWidget(clear_image_button)
+        preview_layout.addLayout(preview_actions)
+        create_layout.addLayout(preview_layout)
 
+        input_layout = QVBoxLayout()
         self.prompt_edit = QPlainTextEdit()
-        self.prompt_edit.setPlaceholderText("输入希望生成或修改的画面内容")
+        self.prompt_edit.setPlaceholderText(
+            "输入希望生成或修改的画面内容；不选择图片时执行文生图"
+        )
         self.prompt_edit.setMinimumHeight(82)
         input_layout.addWidget(self.prompt_edit, 1)
 
         submit_layout = QHBoxLayout()
         self.submit_status_label = QLabel()
+        self.submit_status_label.setProperty("uiRole", "success")
         self.submit_button = QPushButton("加入队列")
+        self.submit_button.setProperty("buttonRole", "primary")
         self.submit_button.setMinimumWidth(110)
         self.submit_button.clicked.connect(self.submit_task)
         submit_layout.addWidget(self.submit_status_label, 1)
@@ -252,7 +271,9 @@ class ImageAiPage(QWidget):
 
         tasks_header = QHBoxLayout()
         tasks_title = QLabel("任务记录")
+        tasks_title.setProperty("uiRole", "sectionTitle")
         self.summary_label = QLabel()
+        self.summary_label.setProperty("uiRole", "badge")
         tasks_header.addWidget(tasks_title)
         tasks_header.addStretch(1)
         tasks_header.addWidget(self.summary_label)
@@ -266,7 +287,9 @@ class ImageAiPage(QWidget):
         self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.task_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.task_table.setAlternatingRowColors(True)
+        self.task_table.setShowGrid(False)
         self.task_table.verticalHeader().setVisible(False)
+        self.task_table.verticalHeader().setDefaultSectionSize(42)
         header = self.task_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -286,6 +309,8 @@ class ImageAiPage(QWidget):
         self.cancel_button = QPushButton("取消任务")
         clear_history_button = QPushButton("清空记录")
         refresh_button = QPushButton("刷新")
+        self.view_result_button.setProperty("buttonRole", "primary")
+        self.cancel_button.setProperty("buttonRole", "danger")
         self.view_result_button.clicked.connect(self.view_result)
         self.open_folder_button.clicked.connect(self.open_result_folder)
         self.retry_button.clicked.connect(self.retry_task)
@@ -352,9 +377,9 @@ class ImageAiPage(QWidget):
 
     def clear_source_image(self) -> None:
         self.source_path = None
-        self.source_path_edit.clear()
         self.source_preview.clear()
         self.source_preview.setText("未选择图片\n文生图")
+        self.source_preview.setToolTip("")
 
     def _set_source_image(self, image_path: Path) -> None:
         pixmap = _read_pixmap(image_path)
@@ -362,8 +387,8 @@ class ImageAiPage(QWidget):
             QMessageBox.warning(self, "选择图片", "无法读取选择的图片文件。")
             return
         self.source_path = image_path.resolve()
-        self.source_path_edit.setText(str(self.source_path))
         self.source_preview.setText("")
+        self.source_preview.setToolTip(str(self.source_path))
         self.source_preview.setPixmap(
             pixmap.scaled(144, 144, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         )
@@ -417,6 +442,9 @@ class ImageAiPage(QWidget):
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setToolTip(error or (prompt if column == 3 else value))
+                if column == 4:
+                    status = str(task.get("status") or "")
+                    item.setForeground(QColor(self.STATUS_COLORS.get(status, "#60696B")))
                 if column == 0:
                     item.setData(Qt.UserRole, task_id)
                 self.task_table.setItem(row, column, item)

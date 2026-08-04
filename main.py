@@ -1,30 +1,42 @@
 # -*- coding:utf-8 -*-
 import json
 import os
-import shutil
 import sys
-import time
-import base64
-import re
 from datetime import datetime
 from pathlib import Path
 import sqlite3
-import queue
 import threading
 import xlrd
 import xlwt
 import pandas as pd
 
 from DrissionPage import ChromiumPage, ChromiumOptions
-ChromiumOptions().set_browser_path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe").save()
-
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
 from PyQt5 import QtCore, QtGui
-from PyQt5.QtGui import QStandardItem, QIcon, QIntValidator
-from qt_material import apply_stylesheet
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIntValidator
+from PyQt5.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from image_ai import ImageAiDatabase, ImageAiPage, ImageAiTaskManager
+from ui_theme import apply_app_theme
+
+
+ChromiumOptions().set_browser_path(
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+).save()
 
 
 class FileHandle:
@@ -224,137 +236,252 @@ class MainFrame(QTabWidget):
         self.signal_hint_error.connect(self.hint_error)
 
 
+    @staticmethod
+    def _set_role(widget, name, value):
+        widget.setProperty(name, value)
+        return widget
+
+    def _create_page(self, eyebrow, title, description, badge):
+        page = QWidget(self)
+        page.setObjectName("AppPage")
+        root = QVBoxLayout(page)
+        root.setContentsMargins(24, 22, 24, 24)
+        root.setSpacing(16)
+
+        header = QFrame(page)
+        header.setObjectName("PageHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(22, 17, 20, 17)
+        header_layout.setSpacing(18)
+
+        copy_layout = QVBoxLayout()
+        copy_layout.setSpacing(3)
+        eyebrow_label = QLabel(eyebrow, header)
+        self._set_role(eyebrow_label, "uiRole", "eyebrow")
+        title_label = QLabel(title, header)
+        self._set_role(title_label, "uiRole", "pageTitle")
+        description_label = QLabel(description, header)
+        description_label.setWordWrap(True)
+        self._set_role(description_label, "uiRole", "pageDescription")
+        copy_layout.addWidget(eyebrow_label)
+        copy_layout.addWidget(title_label)
+        copy_layout.addWidget(description_label)
+        header_layout.addLayout(copy_layout, 1)
+
+        badge_label = QLabel(badge, header)
+        badge_label.setAlignment(Qt.AlignCenter)
+        self._set_role(badge_label, "uiRole", "badge")
+        header_layout.addWidget(badge_label, 0, Qt.AlignTop)
+        root.addWidget(header)
+        return page, root
+
+    def _create_card(self, parent, title, hint=""):
+        card = QFrame(parent)
+        card.setObjectName("Card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 17, 20, 19)
+        layout.setSpacing(12)
+
+        title_row = QHBoxLayout()
+        title_label = QLabel(title, card)
+        self._set_role(title_label, "uiRole", "sectionTitle")
+        title_row.addWidget(title_label)
+        if hint:
+            title_row.addStretch(1)
+            hint_label = QLabel(hint, card)
+            self._set_role(hint_label, "uiRole", "hint")
+            title_row.addWidget(hint_label)
+        layout.addLayout(title_row)
+        return card, layout
+
+    def _add_path_row(self, layout, parent, label_text, control, button):
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        label = QLabel(label_text, parent)
+        label.setFixedWidth(72)
+        self._set_role(label, "uiRole", "fieldLabel")
+        row.addWidget(label)
+        row.addWidget(control, 1)
+        button.setMinimumWidth(100)
+        row.addWidget(button)
+        layout.addLayout(row)
+
+    def _add_log_card(self, root, parent, log_control, hint="运行信息会记录在这里"):
+        card, layout = self._create_card(parent, "处理记录", hint)
+        log_control.setReadOnly(True)
+        log_control.setObjectName("LogPanel")
+        layout.addWidget(log_control, 1)
+        root.addWidget(card, 1)
+
     def init_ui(self):
         self.setWindowTitle(" ")
         self.setWindowIcon(QtGui.QIcon("ico.ico"))
-        self.resize(1050, 760)
+        self.resize(1120, 790)
+        self.setMinimumSize(960, 680)
+        self.setDocumentMode(True)
+        self.setTabPosition(QTabWidget.North)
 
         # 拆分功能
-        self.widget1 = QWidget(self)
-
-        vbox = QVBoxLayout(self.widget1)
-        self.widget1.setLayout(vbox)
-
-        hbox_start = QHBoxLayout(self.widget1)
-        self.start_button = QPushButton("开始处理", self.widget1)
-        self.start_button.clicked.connect(self.start_handle)
-        hbox_start.addWidget(self.start_button)
-        vbox.addLayout(hbox_start)
-
-        hbox_path = QHBoxLayout(self.widget1)
+        self.widget1, page1_layout = self._create_page(
+            "EXCEL TOOLS",
+            "报价表拆分",
+            "按工厂自动整理并生成独立表格，常用路径会继续为你保留。",
+            "省心整理",
+        )
+        split_card, split_layout = self._create_card(
+            self.widget1, "文件设置", "支持 .xls 格式"
+        )
         self.file_path_ctrl = QLineEdit(self.widget1)
-        self.file_path_ctrl.setEnabled(False)
-        self.file_path_ctrl.setStyleSheet("color: #3CB371;")
-        self.file_path_ctrl.setPlaceholderText("选择要处理的文件")
+        self.file_path_ctrl.setReadOnly(True)
+        self.file_path_ctrl.setPlaceholderText("请选择需要拆分的 Excel 文件")
         self.file_path_choice_button = QPushButton("选择文件", self.widget1)
         self.file_path_choice_button.clicked.connect(self.choice_file_path)
-        hbox_path.addWidget(self.file_path_ctrl)
-        hbox_path.addWidget(self.file_path_choice_button)
-        vbox.addLayout(hbox_path)
+        self._add_path_row(
+            split_layout,
+            split_card,
+            "源文件",
+            self.file_path_ctrl,
+            self.file_path_choice_button,
+        )
 
-        hbox_path = QHBoxLayout(self.widget1)
         self.save_path_ctrl = QLineEdit(self.widget1)
-        self.save_path_ctrl.setEnabled(False)
-        self.save_path_ctrl.setStyleSheet("color: #3CB371;")
-        self.save_path_ctrl.setPlaceholderText("文件存放路径")
-        self.save_path_choice_button = QPushButton("选择路径", self.widget1)
+        self.save_path_ctrl.setReadOnly(True)
+        self.save_path_ctrl.setPlaceholderText("请选择拆分后文件的存放目录")
+        self.save_path_choice_button = QPushButton("选择目录", self.widget1)
         self.save_path_choice_button.clicked.connect(self.choice_save_path)
-        hbox_path.addWidget(self.save_path_ctrl)
-        hbox_path.addWidget(self.save_path_choice_button)
-        vbox.addLayout(hbox_path)
+        self._add_path_row(
+            split_layout,
+            split_card,
+            "保存到",
+            self.save_path_ctrl,
+            self.save_path_choice_button,
+        )
 
-        hbox_log = QHBoxLayout(self.widget1)
+        split_actions = QHBoxLayout()
+        split_tip = QLabel("确认文件与目录后即可开始，处理期间可以查看下方记录。", split_card)
+        self._set_role(split_tip, "uiRole", "hint")
+        self.start_button = QPushButton("开始拆分", self.widget1)
+        self._set_role(self.start_button, "buttonRole", "primary")
+        self.start_button.setMinimumWidth(128)
+        self.start_button.clicked.connect(self.start_handle)
+        split_actions.addWidget(split_tip)
+        split_actions.addStretch(1)
+        split_actions.addWidget(self.start_button)
+        split_layout.addLayout(split_actions)
+        page1_layout.addWidget(split_card)
+
         self.log_ctrl = QTextEdit(self.widget1)
-        self.log_ctrl.setReadOnly(True)
-        self.log_ctrl.setStyleSheet("color: #3CB371;")
-        hbox_log.addWidget(self.log_ctrl)
-        vbox.addLayout(hbox_log)
-
-        self.addTab(self.widget1, "拆分")
-
+        self._add_log_card(page1_layout, self.widget1, self.log_ctrl)
+        self.addTab(self.widget1, "表格拆分")
 
         # 提取货号
-        self.widget2 = QWidget(self)
-        vbox2 = QVBoxLayout(self.widget2)
-        self.widget1.setLayout(vbox2)
-
-        hbox_start = QHBoxLayout(self.widget2)
-        self.start_button2 = QPushButton("开始处理", self.widget2)
-        self.start_button2.clicked.connect(self.start_handle2)
-        hbox_start.addWidget(self.start_button2)
-        vbox2.addLayout(hbox_start)
-
-        hbox_path = QHBoxLayout(self.widget2)
+        self.widget2, page2_layout = self._create_page(
+            "IMAGE TOOLS",
+            "图片货号提取",
+            "读取文件夹内的图片名称，快速汇总为可复制使用的货号清单。",
+            "快速清单",
+        )
+        extract_card, extract_layout = self._create_card(
+            self.widget2, "文件夹设置", "识别 .jpg 与 .png 图片"
+        )
         self.file_path_ctrl2 = QLineEdit(self.widget2)
-        self.file_path_ctrl2.setEnabled(False)
-        self.file_path_ctrl2.setStyleSheet("color: #3CB371;")
-        self.file_path_ctrl2.setPlaceholderText("选择要处理的文件")
-        self.file_path_choice_button2 = QPushButton("选择文件", self.widget2)
+        self.file_path_ctrl2.setReadOnly(True)
+        self.file_path_ctrl2.setPlaceholderText("请选择存放图片的文件夹")
+        self.file_path_choice_button2 = QPushButton("选择文件夹", self.widget2)
         self.file_path_choice_button2.clicked.connect(self.choice_file_path2)
-        hbox_path.addWidget(self.file_path_ctrl2)
-        hbox_path.addWidget(self.file_path_choice_button2)
-        vbox2.addLayout(hbox_path)
+        self._add_path_row(
+            extract_layout,
+            extract_card,
+            "图片目录",
+            self.file_path_ctrl2,
+            self.file_path_choice_button2,
+        )
 
-        hbox_path = QHBoxLayout(self.widget2)
         self.save_path_ctrl2 = QLineEdit(self.widget2)
-        self.save_path_ctrl2.setEnabled(False)
-        self.save_path_ctrl2.setStyleSheet("color: #3CB371;")
-        self.save_path_ctrl2.setPlaceholderText("文件存放路径")
-        self.save_path_choice_button2 = QPushButton("选择路径", self.widget2)
+        self.save_path_ctrl2.setReadOnly(True)
+        self.save_path_ctrl2.setPlaceholderText("请选择 output.txt 的存放目录")
+        self.save_path_choice_button2 = QPushButton("选择目录", self.widget2)
         self.save_path_choice_button2.clicked.connect(self.choice_save_path2)
-        hbox_path.addWidget(self.save_path_ctrl2)
-        hbox_path.addWidget(self.save_path_choice_button2)
-        vbox2.addLayout(hbox_path)
+        self._add_path_row(
+            extract_layout,
+            extract_card,
+            "保存到",
+            self.save_path_ctrl2,
+            self.save_path_choice_button2,
+        )
 
-        hbox_log = QHBoxLayout(self.widget2)
+        extract_actions = QHBoxLayout()
+        extract_tip = QLabel("结果会保存为 output.txt，每个货号单独一行。", extract_card)
+        self._set_role(extract_tip, "uiRole", "hint")
+        self.start_button2 = QPushButton("开始提取", self.widget2)
+        self._set_role(self.start_button2, "buttonRole", "primary")
+        self.start_button2.setMinimumWidth(128)
+        self.start_button2.clicked.connect(self.start_handle2)
+        extract_actions.addWidget(extract_tip)
+        extract_actions.addStretch(1)
+        extract_actions.addWidget(self.start_button2)
+        extract_layout.addLayout(extract_actions)
+        page2_layout.addWidget(extract_card)
+
         self.log_ctrl2 = QTextEdit(self.widget2)
-        self.log_ctrl2.setReadOnly(True)
-        self.log_ctrl2.setStyleSheet("color: #3CB371;")
-        hbox_log.addWidget(self.log_ctrl2)
-        vbox2.addLayout(hbox_log)
-
-        self.addTab(self.widget2, "提取货号")
+        self._add_log_card(page2_layout, self.widget2, self.log_ctrl2)
+        self.addTab(self.widget2, "货号提取")
 
         # 网站录入
-        self.widget3 = QWidget(self)
-        vbox2 = QVBoxLayout(self.widget3)
-        self.widget1.setLayout(vbox2)
-
-        hbox_start = QHBoxLayout(self.widget3)
-
-        self.open_website_button = QPushButton("打开网站", self.widget3)
-        self.open_website_button.clicked.connect(self.open_website)
-        hbox_start.addWidget(self.open_website_button)
-
-        self.current_row_ctrl = QLineEdit(self.widget3)
-        self.current_row_ctrl.setText("3")
-        self.current_row_ctrl.setFixedWidth(50)
-        self.current_row_ctrl.setStyleSheet("color: #3CB371;")
-        hbox_start.addWidget(self.current_row_ctrl)
-
-        self.entry_button = QPushButton("录入", self.widget3)
-        self.entry_button.clicked.connect(self.website_entry)
-        hbox_start.addWidget(self.entry_button)
-        vbox2.addLayout(hbox_start)
-
-        hbox_path = QHBoxLayout(self.widget3)
+        self.widget3, page3_layout = self._create_page(
+            "CMS ASSISTANT",
+            "CMS 网站录入",
+            "从 Excel 读取产品资料，按行辅助填写网站表单，减少重复输入。",
+            "录入助手",
+        )
+        entry_card, entry_layout = self._create_card(
+            self.widget3, "录入准备", "建议先选择表格，再打开网站登录"
+        )
         self.file_path_ctrl3 = QLineEdit(self.widget3)
-        self.file_path_ctrl3.setEnabled(False)
-        self.file_path_ctrl3.setStyleSheet("color: #3CB371;")
-        self.file_path_ctrl3.setPlaceholderText("选择要录入的文件")
+        self.file_path_ctrl3.setReadOnly(True)
+        self.file_path_ctrl3.setPlaceholderText("请选择需要录入的 .xlsx 文件")
         self.file_path_choice_button3 = QPushButton("选择文件", self.widget3)
         self.file_path_choice_button3.clicked.connect(self.choice_file_path3)
-        hbox_path.addWidget(self.file_path_ctrl3)
-        hbox_path.addWidget(self.file_path_choice_button3)
-        vbox2.addLayout(hbox_path)
+        self._add_path_row(
+            entry_layout,
+            entry_card,
+            "数据表格",
+            self.file_path_ctrl3,
+            self.file_path_choice_button3,
+        )
 
-        hbox_log = QHBoxLayout(self.widget3)
+        entry_actions = QHBoxLayout()
+        entry_actions.setSpacing(10)
+        row_label = QLabel("当前行", entry_card)
+        self._set_role(row_label, "uiRole", "fieldLabel")
+        self.current_row_ctrl = QLineEdit(self.widget3)
+        self.current_row_ctrl.setText("3")
+        self.current_row_ctrl.setValidator(QIntValidator(1, 999999, self))
+        self.current_row_ctrl.setAlignment(Qt.AlignCenter)
+        self.current_row_ctrl.setFixedWidth(78)
+        self.current_row_ctrl.setToolTip("Excel 中准备录入的数据行号")
+        self.open_website_button = QPushButton("打开 CMS 网站", self.widget3)
+        self.open_website_button.clicked.connect(self.open_website)
+        self.entry_button = QPushButton("录入这一行", self.widget3)
+        self._set_role(self.entry_button, "buttonRole", "primary")
+        self.entry_button.clicked.connect(self.website_entry)
+        entry_actions.addWidget(row_label)
+        entry_actions.addWidget(self.current_row_ctrl)
+        entry_actions.addSpacing(8)
+        entry_actions.addWidget(self.open_website_button)
+        entry_actions.addStretch(1)
+        entry_actions.addWidget(self.entry_button)
+        entry_layout.addLayout(entry_actions)
+        page3_layout.addWidget(entry_card)
+
         self.log_ctrl3 = QTextEdit(self.widget3)
-        self.log_ctrl3.setReadOnly(True)
-        self.log_ctrl3.setStyleSheet("color: #3CB371;")
-        hbox_log.addWidget(self.log_ctrl3)
-        vbox2.addLayout(hbox_log)
-        self.addTab(self.widget3, "CMS网站录入")
+        self._add_log_card(
+            page3_layout,
+            self.widget3,
+            self.log_ctrl3,
+            "表格解析与网站录入状态会显示在这里",
+        )
+        self.addTab(self.widget3, "CMS 录入")
 
         self.image_ai_page = ImageAiPage(
             self.image_ai_database,
@@ -490,7 +617,7 @@ class MainFrame(QTabWidget):
         """网站录入"""
         try:
             body_node = self.page.ele("@id=frame_right").ele("tag=body")
-        except Exception as e:
+        except Exception:
             self.log_ctrl3.append("页面不对哦，打开添加产品的页面再点录入")
             return
         if not self.is_not_none_node(body_node):
@@ -502,7 +629,7 @@ class MainFrame(QTabWidget):
             if current_num < 0:
                 self.log_ctrl3.append("输入的行数要大于3哦")
                 return
-        except Exception as e:
+        except Exception:
             self.log_ctrl3.append("输入的行数不对哦")
             return
         name = self.website_entry_info["Name"][current_num]
@@ -569,7 +696,7 @@ class MainFrame(QTabWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    apply_app_theme(app)
     frame = MainFrame()
-    apply_stylesheet(app, theme="dark_lightgreen.xml")
     frame.show()
     sys.exit(app.exec_())
