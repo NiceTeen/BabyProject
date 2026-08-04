@@ -7,6 +7,7 @@ import time
 import base64
 import re
 from datetime import datetime
+from pathlib import Path
 import sqlite3
 import queue
 import threading
@@ -15,13 +16,15 @@ import xlwt
 import pandas as pd
 
 from DrissionPage import ChromiumPage, ChromiumOptions
-ChromiumOptions().set_browser_path("C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe").save()
+ChromiumOptions().set_browser_path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe").save()
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5 import QtCore, QtGui
 from PyQt5.QtGui import QStandardItem, QIcon, QIntValidator
 from qt_material import apply_stylesheet
+
+from image_ai import ImageAiDatabase, ImageAiPage, ImageAiTaskManager
 
 
 class FileHandle:
@@ -208,6 +211,8 @@ class MainFrame(QTabWidget):
         super(MainFrame, self).__init__()
         self.file_handle = FileHandle(self)
         self.config_save = ConfigSave(self)
+        self.image_ai_database = ImageAiDatabase(Path("Config.db"))
+        self.image_ai_manager = ImageAiTaskManager(self.image_ai_database, self)
         self.website_entry_info = {}
         self.init_ui()
         self.log("日志系统")
@@ -222,7 +227,7 @@ class MainFrame(QTabWidget):
     def init_ui(self):
         self.setWindowTitle(" ")
         self.setWindowIcon(QtGui.QIcon("ico.ico"))
-        self.resize(600, 400)
+        self.resize(1050, 760)
 
         # 拆分功能
         self.widget1 = QWidget(self)
@@ -350,6 +355,14 @@ class MainFrame(QTabWidget):
         hbox_log.addWidget(self.log_ctrl3)
         vbox2.addLayout(hbox_log)
         self.addTab(self.widget3, "CMS网站录入")
+
+        self.image_ai_page = ImageAiPage(
+            self.image_ai_database,
+            self.image_ai_manager,
+            Path.cwd(),
+            self,
+        )
+        self.addTab(self.image_ai_page, "生图改图")
 
 
     def init_save(self):
@@ -536,6 +549,22 @@ class MainFrame(QTabWidget):
         message = "--" + now + "--" + message
         self.log_ctrl.append(message)
         print(message)
+
+    def closeEvent(self, event):
+        if self.image_ai_manager.has_active_tasks():
+            answer = QMessageBox.question(
+                self,
+                "图片 AI 任务进行中",
+                "当前仍有生图改图任务。是否取消全部任务？后台任务结束后可再次关闭软件。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer == QMessageBox.Yes:
+                self.image_ai_manager.cancel_all()
+            event.ignore()
+            return
+        self.image_ai_manager.shutdown()
+        event.accept()
 
 
 if __name__ == '__main__':

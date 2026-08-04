@@ -1,7 +1,10 @@
 .idea
 __pycache__
+.pytest_cache
 build
 dist
-main.spec
 result
 TProject
+Config.db
+Config.db-shm
+Config.db-wal

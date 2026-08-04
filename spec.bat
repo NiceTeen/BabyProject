@@ -1,4 +1,3 @@
 @echo off
-call G:\AllVenv\BabyProject\Scripts\activate
-pyinstaller -F -w -i ico.ico main.py
+python -m PyInstaller --noconfirm --clean main.spec
 pause
